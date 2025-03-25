@@ -10,5 +10,8 @@ Diagrama de blocos explicativo do firmware:
 
 Desenho do controle:
 
+![Imagem do WhatsApp de 2025-03-25 à(s) 00 07 17_136a5af9](https://github.com/user-attachments/assets/91b299e2-9bd2-4833-b442-0be783bd9602)
+
+
 
 
