@@ -7,13 +7,12 @@ from tkinter import messagebox
 from pynput import keyboard
 
 
-key_states = {'w': False,'a': False,'s': False,'d': False}
+key_states = {'w': False,'a': False,'s': False,'d': False, 'f': False}
 
 # Inicializa o controlador de teclado
 keyboard_controller = keyboard.Controller()
 
 def mov_pers(key, press):
-    #global key_states
     if press and not key_states[key]:
         keyboard_controller.press(key)
         key_states[key] = True
@@ -42,6 +41,9 @@ def process_input(axis, value):
         else:
             mov_pers('w', False)
             mov_pers('s', False)
+    elif axis == 2:
+        mov_pers("f", True)
+        mov_pers("f", False)
 
 def controle(ser):
     """
