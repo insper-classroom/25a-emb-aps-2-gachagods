@@ -1,15 +1,16 @@
 #include <FreeRTOS.h>
 #include <task.h>
 #include <queue.h>
+#include <semphr.h>
 #include "pico/stdlib.h"
 #include "hardware/adc.h"
 #include "hardware/uart.h"
 #include <stdio.h>
 
 QueueHandle_t xQueueADC;
+SemaphoreHandle_t xSemaphore_btn;
 
 const int BOTAO = 16;
-volatile int flag=0;
 
 typedef struct adc {
     int axis; 
@@ -19,16 +20,16 @@ typedef struct adc {
 void btn_callback(uint gpio, uint32_t events) {
     if (events == 0x04) { 
         if (gpio == BOTAO) {
-            flag = 1;
+            xSemaphoreGiveFromISR(xSemaphore_btn, NULL);
         }
     }
-    else if(events== 0x08){
-        flag=0;
+    else if (events == 0x08) {
+        xSemaphoreTakeFromISR(xSemaphore_btn, NULL);
     }
 }
 
 int filtro_movimento(int new_value, int *buffer, int index) {
-    int sum=0;
+    int sum = 0;
     for (int i = 0; i < 5; i++) {
         sum += buffer[i];
     }
@@ -40,7 +41,7 @@ int filtro_movimento(int new_value, int *buffer, int index) {
 
 void x_task(void *p) {
     adc_init(); 
-
+    int prev_value = 0;
     int buffer[5] = {2047, 2047, 2047, 2047, 2047};
     int x_index = 0;
 
@@ -53,19 +54,27 @@ void x_task(void *p) {
             x_index = 0;
         }
         int scaled = (movimento_filtrado - 2047)/8; 
-        if(scaled<30 && scaled > -30) {
+        if (scaled < 30 && scaled > -30) {
             scaled = 0;
         }
-        adc_t data = {0, scaled}; 
 
-        xQueueSend(xQueueADC, &data, pdMS_TO_TICKS(50)); 
+        adc_t data = {0, scaled};
+        if (prev_value == 0) {
+            xQueueSend(xQueueADC, &data, pdMS_TO_TICKS(50)); 
+        }
+        if (scaled == 0) {
+            prev_value = 1;
+        }
+        else {
+            prev_value = 0;
+        }    
         vTaskDelay(pdMS_TO_TICKS(10)); 
     }
 }
 
 void y_task(void *p) {
     adc_init(); 
-
+    int prev_value = 0;
     int buffer[5] = {2047, 2047, 2047, 2047, 2047};
     int y_index = 0;
 
@@ -78,21 +87,28 @@ void y_task(void *p) {
             y_index = 0;
         }
         int scaled = (movimento_filtrado - 2047)/8; 
-        if(scaled<30 && scaled > -30) {
+        if (scaled < 30 && scaled > -30) {
             scaled = 0;
         }
-        adc_t data = {1, scaled}; 
-        xQueueSend(xQueueADC, &data, pdMS_TO_TICKS(50)); 
+        adc_t data = {1, scaled};
+        if (prev_value == 0) {
+            xQueueSend(xQueueADC, &data, pdMS_TO_TICKS(50)); 
+        }
+        if (scaled == 0) {
+            prev_value = 1;
+        }
+        else {
+            prev_value = 0;
+        }    
         vTaskDelay(pdMS_TO_TICKS(10)); 
     }
 }
 
 void button_task(void *p) {
     while (1) {
-        if (flag == 1) {
+        if (xSemaphoreTake(xSemaphore_btn, 0) == pdTRUE) {
             adc_t data = {2, 0}; 
             xQueueSend(xQueueADC, &data, pdMS_TO_TICKS(50)); 
-            vTaskDelay(pdMS_TO_TICKS(10)); 
             //printf("Button pressed\n");
         }
         vTaskDelay(pdMS_TO_TICKS(10));
@@ -122,6 +138,8 @@ int main() {
     gpio_pull_up(BOTAO);
 
     xQueueADC = xQueueCreate(10, sizeof(adc_t));
+    xSemaphore_btn = xSemaphoreCreateBinary(); 
+
     gpio_set_irq_enabled_with_callback(BOTAO, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, true, &btn_callback);
 
     xTaskCreate(x_task, "X Task", 4096, NULL, 1, NULL);
