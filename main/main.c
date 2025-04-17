@@ -127,6 +127,38 @@ void uart_task(void *p) {
     }
 }
 
+
+void adc_1_task(void *p) {
+    adc_init();
+    //adc_gpio_init(26);
+    //adc_gpio_init(27);
+
+    // 12-bit conversion, assume max value == ADC_VREF == 3.3 V
+    const float conversion_factor = 3.3f / (1 << 12);
+
+    uint16_t result;
+    while (1) {
+
+        // CÓDIGO AQUI
+        adc_select_input(3); // Select ADC input 1 (GPIO27)
+        result = adc_read();
+        float conversao = result * conversion_factor
+        printf("voltage 1: %f V\n", conversao);
+
+        if (conversao > 2.5) {
+            adc_t data = {3, 0}; 
+            xQueueSend(xQueueADC, &data, pdMS_TO_TICKS(50)); 
+        } else {
+            printf("ADC 1: LOW\n");
+        }
+
+
+        vTaskDelay(pdMS_TO_TICKS(200));
+    }
+}
+
+
+
 int main() {
     stdio_init_all();
     adc_init();
@@ -136,6 +168,9 @@ int main() {
     gpio_init(BOTAO);
     gpio_set_dir(BOTAO, GPIO_IN);
     gpio_pull_up(BOTAO);
+
+
+
 
     xQueueADC = xQueueCreate(10, sizeof(adc_t));
     xSemaphore_btn = xSemaphoreCreateBinary(); 
