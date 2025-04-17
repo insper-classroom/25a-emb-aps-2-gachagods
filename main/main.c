@@ -3,30 +3,98 @@
 #include <queue.h>
 #include <semphr.h>
 #include "pico/stdlib.h"
+#include "hardware/i2c.h"
 #include "hardware/adc.h"
 #include "hardware/uart.h"
 #include <stdio.h>
 
+// Definições para o ADS1015
+#define I2C_PORT i2c1
+#define ADS1015_ADDRESS 0x48 
+#define ADS1015_CONVERSION_REG 0x00
+#define ADS1015_CONFIG_REG 0x01
+#define BAUD_RATE 100000
+
 QueueHandle_t xQueueADC;
 SemaphoreHandle_t xSemaphore_btn;
 
-const int BOTAO = 16;
+int BOTAO = 16;
+int SDA = 14;
+int SCL = 15;
 
 typedef struct adc {
     int axis; 
     int val;  
 } adc_t;
 
+void i2c_init_ads1015() {
+    i2c_init(I2C_PORT, BAUD_RATE);
+    gpio_set_function(SDA, GPIO_FUNC_I2C);
+    gpio_set_function(SCL, GPIO_FUNC_I2C);
+    gpio_pull_up(SDA);
+    gpio_pull_up(SCL);
+}
+
+void ads1015_configure(uint16_t config) {
+    uint8_t data[3];
+    data[0] = ADS1015_CONFIG_REG;
+    data[1] = (config >> 8) & 0xFF;
+    data[2] = config & 0xFF; 
+    i2c_write_blocking(I2C_PORT, ADS1015_ADDRESS, data, 3, false);
+}
+
+int16_t ads1015_read() {
+    uint8_t reg = ADS1015_CONVERSION_REG;
+    uint8_t data[2];
+    i2c_write_blocking(I2C_PORT, ADS1015_ADDRESS, &reg, 1, true);
+    i2c_read_blocking(I2C_PORT, ADS1015_ADDRESS, data, 2, false);
+    return (int16_t)((data[0] << 8) | data[1]);
+}
+
+void flex_sensor_task(void *p) {
+    i2c_init_ads1015(); 
+    int low;
+    int prev=1;
+    while (1) {
+        uint16_t config = 0;
+        config |= 0x8000; 
+        config |= 0x4000; 
+        config |= 0x0200;
+        config |= 0x0100;
+        config |= 0x0080;
+        config |= 0x0003;
+
+        ads1015_configure(config);
+
+        vTaskDelay(pdMS_TO_TICKS(15));
+
+        int16_t output = ads1015_read();
+        output = output/100;
+        if(output<190){
+            low=0;
+        }
+        else{
+            low=1;
+        }
+        adc_t data = {3, low};
+        if (low != prev){
+            //printf("Flex: %d\n", output);
+            xQueueSend(xQueueADC, &data, pdMS_TO_TICKS(50));
+        }
+        prev = low;
+        vTaskDelay(pdMS_TO_TICKS(10)); 
+    }
+}
 void btn_callback(uint gpio, uint32_t events) {
     if (events == 0x04) { 
         if (gpio == BOTAO) {
             xSemaphoreGiveFromISR(xSemaphore_btn, NULL);
         }
-    }
-    else if (events == 0x08) {
+    } else if (events == 0x08) {
         xSemaphoreTakeFromISR(xSemaphore_btn, NULL);
     }
 }
+
 
 int filtro_movimento(int new_value, int *buffer, int index) {
     int sum = 0;
@@ -60,12 +128,12 @@ void x_task(void *p) {
 
         adc_t data = {0, scaled};
         if (prev_value == 0) {
+            printf("X: %d\n", scaled);
             xQueueSend(xQueueADC, &data, pdMS_TO_TICKS(50)); 
         }
         if (scaled == 0) {
             prev_value = 1;
-        }
-        else {
+        } else {
             prev_value = 0;
         }    
         vTaskDelay(pdMS_TO_TICKS(10)); 
@@ -87,6 +155,7 @@ void y_task(void *p) {
             y_index = 0;
         }
         int scaled = (movimento_filtrado - 2047)/8; 
+        scaled = scaled * -1;
         if (scaled < 30 && scaled > -30) {
             scaled = 0;
         }
@@ -96,8 +165,7 @@ void y_task(void *p) {
         }
         if (scaled == 0) {
             prev_value = 1;
-        }
-        else {
+        } else {
             prev_value = 0;
         }    
         vTaskDelay(pdMS_TO_TICKS(10)); 
@@ -109,7 +177,6 @@ void button_task(void *p) {
         if (xSemaphoreTake(xSemaphore_btn, 0) == pdTRUE) {
             adc_t data = {2, 0}; 
             xQueueSend(xQueueADC, &data, pdMS_TO_TICKS(50)); 
-            //printf("Button pressed\n");
         }
         vTaskDelay(pdMS_TO_TICKS(10));
     }
@@ -127,38 +194,6 @@ void uart_task(void *p) {
     }
 }
 
-
-void adc_1_task(void *p) {
-    adc_init();
-    //adc_gpio_init(26);
-    //adc_gpio_init(27);
-
-    // 12-bit conversion, assume max value == ADC_VREF == 3.3 V
-    const float conversion_factor = 3.3f / (1 << 12);
-
-    uint16_t result;
-    while (1) {
-
-        // CÓDIGO AQUI
-        adc_select_input(3); // Select ADC input 1 (GPIO27)
-        result = adc_read();
-        float conversao = result * conversion_factor
-        printf("voltage 1: %f V\n", conversao);
-
-        if (conversao > 2.5) {
-            adc_t data = {3, 0}; 
-            xQueueSend(xQueueADC, &data, pdMS_TO_TICKS(50)); 
-        } else {
-            printf("ADC 1: LOW\n");
-        }
-
-
-        vTaskDelay(pdMS_TO_TICKS(200));
-    }
-}
-
-
-
 int main() {
     stdio_init_all();
     adc_init();
@@ -169,17 +204,15 @@ int main() {
     gpio_set_dir(BOTAO, GPIO_IN);
     gpio_pull_up(BOTAO);
 
-
-
-
     xQueueADC = xQueueCreate(10, sizeof(adc_t));
     xSemaphore_btn = xSemaphoreCreateBinary(); 
 
     gpio_set_irq_enabled_with_callback(BOTAO, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, true, &btn_callback);
 
-    xTaskCreate(x_task, "X Task", 4096, NULL, 1, NULL);
-    xTaskCreate(y_task, "Y Task", 4096, NULL, 1, NULL);
+    //xTaskCreate(x_task, "X Task", 4096, NULL, 1, NULL);
+    //xTaskCreate(y_task, "Y Task", 4096, NULL, 1, NULL);
     xTaskCreate(button_task, "Button Task", 4096, NULL, 1, NULL);
+    xTaskCreate(flex_sensor_task, "Flex Sensor Task", 4096, NULL, 1, NULL);
     xTaskCreate(uart_task, "UART Task", 4096, NULL, 1, NULL);
 
     vTaskStartScheduler();
