@@ -128,12 +128,12 @@ void x_task(void *p) {
 
         adc_t data = {0, scaled};
         if (prev_value == 0) {
-            printf("X: %d\n", scaled);
             xQueueSend(xQueueADC, &data, pdMS_TO_TICKS(50)); 
         }
         if (scaled == 0) {
             prev_value = 1;
-        } else {
+        }
+        else {
             prev_value = 0;
         }    
         vTaskDelay(pdMS_TO_TICKS(10)); 
@@ -155,7 +155,7 @@ void y_task(void *p) {
             y_index = 0;
         }
         int scaled = (movimento_filtrado - 2047)/8; 
-        scaled = scaled * -1;
+        scaled = -scaled;
         if (scaled < 30 && scaled > -30) {
             scaled = 0;
         }
@@ -165,7 +165,8 @@ void y_task(void *p) {
         }
         if (scaled == 0) {
             prev_value = 1;
-        } else {
+        }
+        else {
             prev_value = 0;
         }    
         vTaskDelay(pdMS_TO_TICKS(10)); 
@@ -209,8 +210,8 @@ int main() {
 
     gpio_set_irq_enabled_with_callback(BOTAO, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, true, &btn_callback);
 
-    //xTaskCreate(x_task, "X Task", 4096, NULL, 1, NULL);
-    //xTaskCreate(y_task, "Y Task", 4096, NULL, 1, NULL);
+    xTaskCreate(x_task, "X Task", 4096, NULL, 1, NULL);
+    xTaskCreate(y_task, "Y Task", 4096, NULL, 1, NULL);
     xTaskCreate(button_task, "Button Task", 4096, NULL, 1, NULL);
     xTaskCreate(flex_sensor_task, "Flex Sensor Task", 4096, NULL, 1, NULL);
     xTaskCreate(uart_task, "UART Task", 4096, NULL, 1, NULL);
