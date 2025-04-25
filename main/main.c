@@ -16,9 +16,13 @@
 #define BAUD_RATE 100000
 
 QueueHandle_t xQueueADC;
-SemaphoreHandle_t xSemaphore_btn;
+SemaphoreHandle_t xSemaphore_btn_1;
+SemaphoreHandle_t xSemaphore_btn_2;
+SemaphoreHandle_t xSemaphore_btn_3;
 
-int BOTAO = 16;
+int BOTAO_1 = 16;
+int BOTAO_2 = 17;
+int BOTAO_3 = 18;
 int SDA = 14;
 int SCL = 15;
 
@@ -87,11 +91,25 @@ void flex_sensor_task(void *p) {
 }
 void btn_callback(uint gpio, uint32_t events) {
     if (events == 0x04) { 
-        if (gpio == BOTAO) {
-            xSemaphoreGiveFromISR(xSemaphore_btn, NULL);
+        if (gpio == BOTAO_1) {
+            xSemaphoreGiveFromISR(xSemaphore_btn_1, NULL);
+        }
+        if (gpio == BOTAO_2) {
+            xSemaphoreGiveFromISR(xSemaphore_btn_2, NULL);
+        }
+        if (gpio == BOTAO_3) {
+            xSemaphoreGiveFromISR(xSemaphore_btn_3, NULL);
         }
     } else if (events == 0x08) {
-        xSemaphoreTakeFromISR(xSemaphore_btn, NULL);
+        if (gpio == BOTAO_1) {
+            xSemaphoreTakeFromISR(xSemaphore_btn_1, NULL);
+        }
+        if (gpio == BOTAO_2) {
+            xSemaphoreTakeFromISR(xSemaphore_btn_2, NULL);
+        }
+        if (gpio == BOTAO_3) {
+            xSemaphoreTakeFromISR(xSemaphore_btn_3, NULL);
+        }
     }
 }
 
@@ -175,8 +193,16 @@ void y_task(void *p) {
 
 void button_task(void *p) {
     while (1) {
-        if (xSemaphoreTake(xSemaphore_btn, 0) == pdTRUE) {
+        if (xSemaphoreTake(xSemaphore_btn_1, 0) == pdTRUE) {
             adc_t data = {2, 0}; 
+            xQueueSend(xQueueADC, &data, pdMS_TO_TICKS(50)); 
+        }
+        if (xSemaphoreTake(xSemaphore_btn_2, 0) == pdTRUE) {
+            adc_t data = {2, 1}; 
+            xQueueSend(xQueueADC, &data, pdMS_TO_TICKS(50)); 
+        }
+        if (xSemaphoreTake(xSemaphore_btn_3, 0) == pdTRUE) {
+            adc_t data = {2, 2}; 
             xQueueSend(xQueueADC, &data, pdMS_TO_TICKS(50)); 
         }
         vTaskDelay(pdMS_TO_TICKS(10));
@@ -201,14 +227,26 @@ int main() {
     adc_gpio_init(26);
     adc_gpio_init(27);
 
-    gpio_init(BOTAO);
-    gpio_set_dir(BOTAO, GPIO_IN);
-    gpio_pull_up(BOTAO);
+    gpio_init(BOTAO_1);
+    gpio_set_dir(BOTAO_1, GPIO_IN);
+    gpio_pull_up(BOTAO_1);
+
+    gpio_init(BOTAO_2);
+    gpio_set_dir(BOTAO_2, GPIO_IN);
+    gpio_pull_up(BOTAO_2);
+    
+    gpio_init(BOTAO_3);
+    gpio_set_dir(BOTAO_3, GPIO_IN);
+    gpio_pull_up(BOTAO_3);
 
     xQueueADC = xQueueCreate(10, sizeof(adc_t));
-    xSemaphore_btn = xSemaphoreCreateBinary(); 
+    xSemaphore_btn_1 = xSemaphoreCreateBinary(); 
+    xSemaphore_btn_2 = xSemaphoreCreateBinary(); 
+    xSemaphore_btn_3 = xSemaphoreCreateBinary(); 
 
-    gpio_set_irq_enabled_with_callback(BOTAO, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, true, &btn_callback);
+    gpio_set_irq_enabled_with_callback(BOTAO_1, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, true, &btn_callback);
+    gpio_set_irq_enabled_with_callback(BOTAO_2, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, true, &btn_callback);
+    gpio_set_irq_enabled_with_callback(BOTAO_3, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, true, &btn_callback);
 
     xTaskCreate(x_task, "X Task", 4096, NULL, 1, NULL);
     xTaskCreate(y_task, "Y Task", 4096, NULL, 1, NULL);
