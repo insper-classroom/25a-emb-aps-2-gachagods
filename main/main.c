@@ -25,6 +25,7 @@ int BOTAO_2 = 17;
 int BOTAO_3 = 18;
 int SDA = 14;
 int SCL = 15;
+int LED = 13;
 
 typedef struct adc {
     int axis; 
@@ -212,6 +213,12 @@ void button_task(void *p) {
 void uart_task(void *p) {
     while (1) {
         adc_t data;
+        if(uart_is_readable(uart0)) {
+            uint8_t byte = uart_getc(uart0);
+            if (byte == 0x19) {
+                gpio_put(LED, 1);
+            }
+        }
         if (xQueueReceive(xQueueADC, &data, portMAX_DELAY)) { 
             putchar_raw(data.axis);         
             putchar_raw(data.val & 0xFF);          
@@ -239,11 +246,15 @@ int main() {
     gpio_set_dir(BOTAO_3, GPIO_IN);
     gpio_pull_up(BOTAO_3);
 
+    gpio_init(LED);
+    gpio_set_dir(LED, GPIO_OUT);
+    gpio_put(LED, 0);
+    
     xQueueADC = xQueueCreate(10, sizeof(adc_t));
     xSemaphore_btn_1 = xSemaphoreCreateBinary(); 
     xSemaphore_btn_2 = xSemaphoreCreateBinary(); 
     xSemaphore_btn_3 = xSemaphoreCreateBinary(); 
-
+    uart_init(uart0, 115200);
     gpio_set_irq_enabled_with_callback(BOTAO_1, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, true, &btn_callback);
     gpio_set_irq_enabled_with_callback(BOTAO_2, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, true, &btn_callback);
     gpio_set_irq_enabled_with_callback(BOTAO_3, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, true, &btn_callback);
